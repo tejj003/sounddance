@@ -1654,7 +1654,7 @@ function vizLightRays(dt) {
 //  VIZ 16: MATRIX RAIN (digital falling streams, B&W)
 // ═════════════════════════════════════════════════════════
 const matrixCols = [];
-const matrixChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*+=<>[]{}|/\\~';
+const matrixChars = 'MICROSOFT';
 
 function initMatrixCols() {
   matrixCols.length = 0;
@@ -1704,16 +1704,16 @@ function vizMatrixRain(dt) {
       if (cy2 < -fontSize || cy2 > H + fontSize) continue;
 
       const t = j / col.len;
-      const headBright = j === 0 ? 1 : 0;
-      const bright = headBright > 0 ? 1 : (1 - t) * (0.4 + fv * 0.6);
-      const alpha = headBright > 0 ? (0.9 + beatEnergy * 0.1) : (1 - t) * (0.3 + fv * 0.5);
+      const isHead = j === 0;
+      const bright = isHead ? 1 : (1 - t) * (0.5 + fv * 0.5);
+      const alpha = isHead ? 1 : Math.pow(1 - t, 0.7) * (0.4 + fv * 0.6 + beatEnergy * 0.2);
 
       ctx.fillStyle = monoW(bright, alpha);
       if (j === 0) {
         ctx.shadowColor = 'rgba(255,255,255,0.8)';
         ctx.shadowBlur = S * 0.008 + beatEnergy * S * 0.005;
       }
-      ctx.fillText(col.chars[j], col.x, cy2);
+      ctx.fillText(col.chars[j] || matrixChars[0], col.x, cy2);
       if (j === 0) ctx.shadowBlur = 0;
     }
 
@@ -1722,6 +1722,9 @@ function vizMatrixRain(dt) {
       col.y = -fontSize * col.len * Math.random();
       col.speed = S * 0.002 + Math.random() * S * 0.004;
       col.len = 8 + Math.floor(Math.random() * 25);
+      // Refill chars to match new length
+      col.chars = [];
+      for (let k = 0; k < col.len; k++) col.chars.push(matrixChars[Math.floor(Math.random() * matrixChars.length)]);
     }
   }
 }
@@ -2320,7 +2323,7 @@ function draw(ts) {
   // Background
   // Monochrome vizzes (12-20) need heavier fade for clean B&W look; plasma/static need full clear
   const isMono = currentViz >= 12;
-  const isFullClear = currentViz === 3; // plasma needs full clear
+  const isFullClear = currentViz === 3 || currentViz === 16; // plasma & matrix rain need full clear
   const fadeAlpha = isFullClear ? 1 : isMono ? (0.2 + (1-getLevel())*0.15) : (0.12 + (1-getLevel())*0.12);
   ctx.fillStyle = `rgba(0,0,0,${fadeAlpha})`;
   ctx.fillRect(0,0,W,H);
