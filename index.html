@@ -827,37 +827,92 @@ function vizParticleExplosion(dt) {
 // ═════════════════════════════════════════════════════════
 //  VIZ 2: SPECTRUM MIRROR (full width, rounded bars)
 // ═════════════════════════════════════════════════════════
+// History buffer for spectrum graph
+const spectrumHistory = [];
+const SPECTRUM_HIST_LEN = 120;
+
 function vizSpectrumMirror() {
-  const freq = getFrequency(), bass = getBass();
+  const freq = getFrequency(), bass = getBass(), wave = getWaveform(), level = getLevel();
   const barCount = Math.max(40, Math.round(W / (S * 0.008))), step = Math.floor(freq.length/barCount);
   const barW = W / barCount;
 
+  // ── Mirrored bars ──
+  const barVals = [];
   for (let i = 0; i < barCount; i++) {
     let s = 0; for(let j=0;j<step;j++) s += freq[i*step+j];
     const val = s/step/255;
-    const barH = val * H * 0.48 * (1 + beatEnergy*0.3);
+    barVals.push(val);
+    const barH = val * H * 0.42 * (1 + beatEnergy*0.3);
     const c = getColor(i/barCount + time*0.04);
     ctx.fillStyle = c; ctx.shadowColor = c;
-    ctx.shadowBlur = 8 + val*25 + beatEnergy*15;
+    ctx.shadowBlur = 6 + val*20 + beatEnergy*10;
 
     const x = i*barW, r = barW*0.4;
-    // Top
     ctx.beginPath();
     ctx.moveTo(x, cy); ctx.lineTo(x, cy-barH+r);
     ctx.quadraticCurveTo(x, cy-barH, x+r, cy-barH);
     ctx.lineTo(x+barW-1-r, cy-barH);
     ctx.quadraticCurveTo(x+barW-1, cy-barH, x+barW-1, cy-barH+r);
     ctx.lineTo(x+barW-1, cy); ctx.fill();
-    // Bottom mirror
     ctx.beginPath();
     ctx.moveTo(x, cy); ctx.lineTo(x, cy+barH-r);
     ctx.quadraticCurveTo(x, cy+barH, x+r, cy+barH);
     ctx.lineTo(x+barW-1-r, cy+barH);
     ctx.quadraticCurveTo(x+barW-1, cy+barH, x+barW-1, cy+barH-r);
     ctx.lineTo(x+barW-1, cy); ctx.fill();
-
     ctx.shadowBlur = 0;
   }
+
+  // ── Frequency curve (smooth line connecting bar peaks) ──
+  ctx.beginPath();
+  for (let i = 0; i < barVals.length; i++) {
+    const x = i * barW + barW * 0.5;
+    const y = cy - barVals[i] * H * 0.42 * (1 + beatEnergy * 0.3);
+    if (i === 0) ctx.moveTo(x, y);
+    else {
+      const px = (i - 1) * barW + barW * 0.5;
+      const py = cy - barVals[i - 1] * H * 0.42 * (1 + beatEnergy * 0.3);
+      ctx.quadraticCurveTo(px + barW * 0.5, py, x, y);
+    }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1.5 + beatEnergy * 1;
+  ctx.shadowColor = 'rgba(255,255,255,0.4)';
+  ctx.shadowBlur = S * 0.005;
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Mirror curve
+  ctx.beginPath();
+  for (let i = 0; i < barVals.length; i++) {
+    const x = i * barW + barW * 0.5;
+    const y = cy + barVals[i] * H * 0.42 * (1 + beatEnergy * 0.3);
+    if (i === 0) ctx.moveTo(x, y);
+    else {
+      const px = (i - 1) * barW + barW * 0.5;
+      const py = cy + barVals[i - 1] * H * 0.42 * (1 + beatEnergy * 0.3);
+      ctx.quadraticCurveTo(px + barW * 0.5, py, x, y);
+    }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1; ctx.stroke();
+
+  // ── Waveform overlay across full width ──
+  ctx.beginPath();
+  for (let i = 0; i < wave.length; i++) {
+    const x = (i / wave.length) * W;
+    const v = (wave[i] - 128) / 128;
+    const y = cy + v * H * 0.15 * (1 + bass * 0.5);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = getColorA(time * 0.06, 0.2 + level * 0.15);
+  ctx.lineWidth = 1; ctx.stroke();
+
+
+
+  // Center line
+  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy);
+  ctx.strokeStyle = getColorA(time * 0.08, 0.08);
+  ctx.lineWidth = 0.5; ctx.stroke();
 }
 
 // ═════════════════════════════════════════════════════════
@@ -2068,218 +2123,147 @@ function vizPulseRadar(dt) {
 //  VIZ 20: GRAVITY WELL (orbiting particles, accretion disk, B&W)
 // ═════════════════════════════════════════════════════════
 const orbitParticles = [];
-for (let i = 0; i < 800; i++) {
-  const a = Math.random() * Math.PI * 2;
-  const r = 0.08 + Math.random() * 0.92;
+for (let i = 0; i < 300; i++) {
   orbitParticles.push({
-    angle: a, radius: r, speed: 0.3 + Math.random() * 2.5,
-    size: 1 + Math.random() * 3, brightness: 0.5 + Math.random() * 0.5,
-    trail: [], drift: (Math.random() - 0.5) * 0.003, seed: Math.random(),
-    orbitTilt: (Math.random() - 0.5) * 0.6 // each particle has its own tilt
+    angle: Math.random() * Math.PI * 2,
+    radius: 0.15 + Math.random() * 0.85,
+    speed: 0.4 + Math.random() * 1.2,
+    size: 0.8 + Math.random() * 1.5,
+    trail: [],
+    drift: (Math.random() - 0.5) * 0.001,
+    seed: Math.random(),
+    orbitTilt: (Math.random() - 0.5) * 0.4
   });
 }
 
 function vizGravityWell(dt) {
-  const freq = getFrequency(), bass = getBass(), mid = getMid(), level = getLevel(), wave = getWaveform();
-  const maxR = Sdiag * 0.5;
-  const pull = 0.4 + bass * 0.8 + beatEnergy * 0.6;
+  const freq = getFrequency(), bass = getBass(), level = getLevel(), wave = getWaveform();
+  const maxR = Sdiag * 0.48;
+  const pull = 0.2 + bass * 0.4 + beatEnergy * 0.3;
 
-  // ── Accretion disk - glowing filled bands ──
-  const diskRings = 20;
+  // ── Accretion disk — clean elliptical rings ──
+  const diskRings = 8;
   for (let r = 0; r < diskRings; r++) {
     const t = (r + 1) / diskRings;
     const rr = maxR * t;
-    const fi = Math.floor(t * freq.length * 0.3);
+    const fi = Math.floor(t * freq.length * 0.25);
     const fv = freq[fi] / 255;
-    const wobble = Math.sin(time * 2.5 + r * 0.6) * S * 0.005 * (1 + bass * 2);
-    const ellipseY = 0.25 + t * 0.45;
+    const ellipseY = 0.3 + t * 0.35;
 
     ctx.beginPath();
-    ctx.ellipse(cx, cy, rr + wobble, (rr + wobble) * ellipseY, time * 0.12 + r * 0.04, 0, Math.PI * 2);
-
-    // Alternate between stroke and fill for depth
-    if (r % 3 === 0 && fv > 0.2) {
-      ctx.fillStyle = monoW(1, 0.01 + fv * 0.03 + beatEnergy * 0.02);
-      ctx.fill();
-    }
-    const alpha = (0.04 + fv * 0.12 + beatEnergy * 0.06) * (0.4 + t * 0.6);
-    ctx.strokeStyle = monoW(0.5 + fv * 0.5, alpha);
-    ctx.lineWidth = 0.8 + fv * 3 + (1 - t) * 2;
-    if (fv > 0.3) {
-      ctx.shadowColor = `rgba(255,255,255,${fv * 0.3})`;
-      ctx.shadowBlur = S * 0.004;
-    }
-    ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.ellipse(cx, cy, rr, rr * ellipseY, time * 0.08, 0, Math.PI * 2);
+    ctx.strokeStyle = monoW(1, 0.03 + fv * 0.06);
+    ctx.lineWidth = 0.5 + fv;
+    ctx.stroke();
   }
 
-  // ── Orbiting particles (800, big, bright, long trails) ──
+  // ── Particles — clean dots with smooth single-path trails ──
   for (const p of orbitParticles) {
-    const fi = Math.floor(p.seed * freq.length * 0.5);
+    const fi = Math.floor(p.seed * freq.length * 0.4);
     const fv = freq[fi] / 255;
 
-    // Speed: inner particles orbit faster (Kepler-like)
-    const keplerSpeed = p.speed / (0.3 + p.radius * 0.7);
-    const speedMult = 1 + level * 3 + beatEnergy * 5;
+    const keplerSpeed = p.speed / (0.4 + p.radius * 0.6);
+    const speedMult = 1 + level * 2 + beatEnergy * 3;
     p.angle += keplerSpeed * speedMult * dt;
 
-    // Gravity pull — stronger when closer
-    const gravPull = pull * 0.002 * dt / (p.radius * p.radius + 0.05);
+    const gravPull = pull * 0.0015 * dt / (p.radius * p.radius + 0.08);
     p.radius -= gravPull;
     p.radius += p.drift * dt * 60;
 
-    // Beat burst — push some particles outward
-    if (beatEnergy > 0.3 && p.radius < 0.5 && Math.random() < beatEnergy * 0.05) {
-      p.radius += 0.1 + Math.random() * 0.3;
-      p.speed *= 1.5;
+    // Beat burst — gentle push outward
+    if (beatEnergy > 0.4 && p.radius < 0.4 && Math.random() < beatEnergy * 0.03) {
+      p.radius += 0.08 + Math.random() * 0.15;
     }
 
-    // Reset if consumed or escaped
-    if (p.radius < 0.03) {
-      // Respawn at edges
-      p.radius = 0.6 + Math.random() * 0.4;
+    if (p.radius < 0.04) {
+      p.radius = 0.5 + Math.random() * 0.5;
       p.angle = Math.random() * Math.PI * 2;
-      p.speed = 0.3 + Math.random() * 2.5;
       p.trail = [];
     }
-    if (p.radius > 1.3) {
-      p.radius = 0.5 + Math.random() * 0.3;
+    if (p.radius > 1.2) {
+      p.radius = 0.4 + Math.random() * 0.3;
       p.trail = [];
     }
 
-    const r = p.radius * maxR * (0.5 + bass * 0.5 + beatEnergy * 0.2);
-    const ellipseRatio = 0.25 + p.radius * 0.45;
-    const cosA = Math.cos(p.angle), sinA = Math.sin(p.angle);
-    const tiltAngle = time * 0.12 + p.orbitTilt;
+    const r = p.radius * maxR * (0.6 + bass * 0.4);
+    const ellipseRatio = 0.3 + p.radius * 0.35;
+    const tiltAngle = time * 0.08 + p.orbitTilt;
     const cosT = Math.cos(tiltAngle), sinT = Math.sin(tiltAngle);
-
-    const ex = cosA * r;
-    const ey = sinA * r * ellipseRatio;
+    const ex = Math.cos(p.angle) * r;
+    const ey = Math.sin(p.angle) * r * ellipseRatio;
     const px = cx + ex * cosT - ey * sinT;
     const py = cy + ex * sinT + ey * cosT;
 
-    // Long trails (up to 25 points)
     p.trail.push({ x: px, y: py });
-    const maxTrail = 15 + Math.floor(fv * 12 + (1 - p.radius) * 8);
+    const maxTrail = 10 + Math.floor(fv * 6);
     if (p.trail.length > maxTrail) p.trail.shift();
 
-    // Draw trail — gradient fade from dim to bright
+    // Single smooth trail path
     if (p.trail.length > 2) {
-      for (let j = 1; j < p.trail.length; j++) {
-        const tt = j / p.trail.length;
-        const trailAlpha = tt * (0.1 + fv * 0.35 + beatEnergy * 0.15) * p.brightness;
-        const trailWidth = tt * p.size * (0.5 + fv * 0.8) * S * 0.0015;
-        ctx.beginPath();
-        ctx.moveTo(p.trail[j - 1].x, p.trail[j - 1].y);
-        ctx.lineTo(p.trail[j].x, p.trail[j].y);
-        ctx.strokeStyle = monoW(p.brightness, trailAlpha);
-        ctx.lineWidth = trailWidth;
-        ctx.stroke();
-      }
-    }
-
-    // Particle dot — bigger, with halo
-    const dotSize = (p.size + fv * 4 + beatEnergy * 3) * S * 0.0015;
-    const innerBright = Math.min(1, p.brightness + fv * 0.3);
-
-    // Outer halo glow
-    const haloR = dotSize * 3;
-    const hg = ctx.createRadialGradient(px, py, 0, px, py, haloR);
-    hg.addColorStop(0, monoW(1, (0.15 + fv * 0.25) * p.brightness));
-    hg.addColorStop(1, monoW(1, 0));
-    ctx.beginPath(); ctx.arc(px, py, haloR, 0, Math.PI * 2);
-    ctx.fillStyle = hg; ctx.fill();
-
-    // Core dot
-    ctx.beginPath();
-    ctx.arc(px, py, dotSize, 0, Math.PI * 2);
-    const dotAlpha = (0.5 + fv * 0.4 + beatEnergy * 0.2) * p.brightness;
-    ctx.fillStyle = monoW(innerBright, dotAlpha);
-    ctx.shadowColor = `rgba(255,255,255,${Math.min(1, fv * 0.8 + beatEnergy * 0.3)})`;
-    ctx.shadowBlur = S * 0.005 + fv * S * 0.008 + beatEnergy * S * 0.005;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  // ── Central singularity — bigger, more dramatic ──
-  const voidR = S * 0.04 + bass * S * 0.02 + beatEnergy * S * 0.01;
-  const voidG = ctx.createRadialGradient(cx, cy, 0, cx, cy, voidR * 1.5);
-  voidG.addColorStop(0, 'rgba(0,0,0,1)');
-  voidG.addColorStop(0.5, 'rgba(0,0,0,0.9)');
-  voidG.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.beginPath(); ctx.arc(cx, cy, voidR * 1.5, 0, Math.PI * 2);
-  ctx.fillStyle = voidG; ctx.fill();
-
-  // Event horizon — bright pulsing ring
-  const horizonR = voidR * 1.3;
-  ctx.beginPath(); ctx.arc(cx, cy, horizonR, 0, Math.PI * 2);
-  ctx.strokeStyle = monoW(1, 0.6 + bass * 0.3 + beatEnergy * 0.2);
-  ctx.lineWidth = 2 + bass * 4 + beatEnergy * 3;
-  ctx.shadowColor = 'rgba(255,255,255,0.9)';
-  ctx.shadowBlur = S * 0.02 + beatEnergy * S * 0.025;
-  ctx.stroke();
-  // Outer shimmer
-  ctx.beginPath(); ctx.arc(cx, cy, horizonR * 1.5, 0, Math.PI * 2);
-  ctx.strokeStyle = monoW(1, 0.12 + bass * 0.1);
-  ctx.lineWidth = S * 0.004;
-  ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx, cy, horizonR * 2, 0, Math.PI * 2);
-  ctx.strokeStyle = monoW(1, 0.04 + bass * 0.04);
-  ctx.lineWidth = S * 0.002;
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  // ── Gravitational lensing arcs — more, brighter ──
-  const arcCount = 10;
-  for (let i = 0; i < arcCount; i++) {
-    const fi2 = Math.floor((i / arcCount) * freq.length * 0.4);
-    const fv = freq[fi2] / 255;
-    if (fv < 0.1) continue;
-
-    const arcAngle = (i / arcCount) * Math.PI * 2 + time * 0.25 + Math.sin(i * 1.7) * 0.5;
-    const arcR = S * 0.05 + i * S * 0.015 + fv * S * 0.06 + beatEnergy * S * 0.04;
-    const arcLen = 0.2 + fv * 0.8;
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, arcR, arcAngle, arcAngle + arcLen);
-    ctx.strokeStyle = monoW(1, 0.1 + fv * 0.35 + beatEnergy * 0.1);
-    ctx.lineWidth = 1.5 + fv * 3;
-    ctx.shadowColor = `rgba(255,255,255,${fv * 0.5})`;
-    ctx.shadowBlur = S * 0.006 * fv;
-    ctx.stroke(); ctx.shadowBlur = 0;
-  }
-
-  // ── Shockwave bursts ──
-  if (beatEnergy > 0.15) {
-    const burstCount = 5;
-    for (let i = 0; i < burstCount; i++) {
-      const bt = ((time * 1 + i * 0.2) % 1.2) / 1.2;
-      const br = bt * maxR;
-      const ba = Math.pow(1 - bt, 1.5) * beatEnergy * 0.25;
-      ctx.beginPath(); ctx.arc(cx, cy, br, 0, Math.PI * 2);
-      ctx.strokeStyle = monoW(1, ba);
-      ctx.lineWidth = (1 - bt) * 4 + 1;
+      ctx.beginPath();
+      ctx.moveTo(p.trail[0].x, p.trail[0].y);
+      for (let j = 1; j < p.trail.length; j++) ctx.lineTo(p.trail[j].x, p.trail[j].y);
+      ctx.strokeStyle = monoW(1, 0.06 + fv * 0.12);
+      ctx.lineWidth = p.size * S * 0.0008;
       ctx.stroke();
     }
+
+    // Clean dot — no halo, no shadowBlur
+    const dotSize = (p.size + fv * 1.5 + beatEnergy * 1) * S * 0.001;
+    ctx.beginPath();
+    ctx.arc(px, py, dotSize, 0, Math.PI * 2);
+    ctx.fillStyle = monoW(1, 0.4 + fv * 0.5);
+    ctx.fill();
   }
 
-  // ── Waveform ring ──
-  const waveR = S * 0.07 + bass * S * 0.04;
+  // ── Central singularity — clean void + single bright ring ──
+  const voidR = S * 0.035 + bass * S * 0.01;
+  const voidG = ctx.createRadialGradient(cx, cy, 0, cx, cy, voidR * 1.8);
+  voidG.addColorStop(0, 'rgba(0,0,0,1)');
+  voidG.addColorStop(0.6, 'rgba(0,0,0,0.85)');
+  voidG.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.beginPath(); ctx.arc(cx, cy, voidR * 1.8, 0, Math.PI * 2);
+  ctx.fillStyle = voidG; ctx.fill();
+
+  // Event horizon — one clean bright ring
+  const horizonR = voidR * 1.2;
+  ctx.beginPath(); ctx.arc(cx, cy, horizonR, 0, Math.PI * 2);
+  ctx.strokeStyle = monoW(1, 0.5 + bass * 0.3);
+  ctx.lineWidth = 1.5 + bass * 2;
+  ctx.shadowColor = 'rgba(255,255,255,0.6)';
+  ctx.shadowBlur = S * 0.01 + beatEnergy * S * 0.008;
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Subtle outer glow ring
+  ctx.beginPath(); ctx.arc(cx, cy, horizonR * 1.8, 0, Math.PI * 2);
+  ctx.strokeStyle = monoW(1, 0.04 + bass * 0.04);
+  ctx.lineWidth = 1; ctx.stroke();
+
+  // ── Shockwave on beats — single clean ring ──
+  if (beatEnergy > 0.2) {
+    const bt = ((time * 0.8) % 1.5) / 1.5;
+    const br = bt * maxR * 0.7;
+    const ba = Math.pow(1 - bt, 2) * beatEnergy * 0.2;
+    ctx.beginPath(); ctx.arc(cx, cy, br, 0, Math.PI * 2);
+    ctx.strokeStyle = monoW(1, ba);
+    ctx.lineWidth = (1 - bt) * 2 + 0.5;
+    ctx.stroke();
+  }
+
+  // ── Waveform ring — thin, close to center ──
+  const waveR = S * 0.055 + bass * S * 0.02;
   ctx.beginPath();
-  for (let i = 0; i <= 256; i++) {
-    const a = (i / 256) * Math.PI * 2;
-    const wi = Math.floor((i / 256) * wave.length);
+  for (let i = 0; i <= 200; i++) {
+    const a = (i / 200) * Math.PI * 2;
+    const wi = Math.floor((i / 200) * wave.length);
     const wv = (wave[wi] - 128) / 128;
-    const r = waveR + wv * S * 0.03 * (1 + bass * 1.5 + beatEnergy * 1.5);
-    const x = cx + Math.cos(a) * r;
-    const y = cy + Math.sin(a) * r;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    const r = waveR + wv * S * 0.015 * (1 + bass);
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
   }
   ctx.closePath();
-  ctx.strokeStyle = monoW(1, 0.25 + level * 0.3 + beatEnergy * 0.15);
-  ctx.lineWidth = 1.5 + bass * 3;
-  ctx.shadowColor = 'rgba(255,255,255,0.5)';
-  ctx.shadowBlur = S * 0.008 + beatEnergy * S * 0.006;
-  ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.strokeStyle = monoW(1, 0.12 + level * 0.15);
+  ctx.lineWidth = 1;
+  ctx.stroke();
 }
 
 // ═════════════════════════════════════════════════════════
